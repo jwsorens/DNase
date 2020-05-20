@@ -1,0 +1,124 @@
+---
+title: "DNase_Project"
+author: "J Sorensen"
+date: "5/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r }
+library(tidyverse)
+library(ggplot2)
+setwd("~/UCD/GitRepos/DNase/R")
+votu_counts <- read.table("InputFiles/FixedNames_CombinedDB_counts.txt", sep="\t", stringsAsFactors = FALSE, header = TRUE)
+votu_cmean <- read.table("InputFiles/FixedNames_CombinedDB_cmean.txt", sep = "\t", stringsAsFactors = FALSE, header = TRUE)
+
+contig_length <- votu_cmean$contig_Length
+
+votu_cmean <- votu_cmean[,-1]
+
+votu_depth <- votu_cmean*125
+
+#Reads per kilobase
+votu_k <- votu_cmean*1000
+# Reads per kilobase per read mapped
+votu_kpr <- votu_k/colSums(votu_counts)
+# Reads per kilobase per million reads mapped
+votu_kpm <- votu_kpr*1000000
+
+
+colSums(votu_counts)
+
+votu_counts <- votu_counts[,-1]
+
+hist(colSums(votu_counts))
+
+
+Alpha_Div_data <- data.frame(Samples=colnames(votu_counts), Reads_mapped=colSums(votu_counts)) 
+Alpha_Div_data$Richness <- colSums(votu_counts>0)
+Alpha_Div_data$DNase <- "Yes"
+Alpha_Div_data$DNase[grep(pattern = "VFN", Alpha_Div_data$Samples)] <- "No"
+
+ggplot(Alpha_Div_data, aes(x=DNase, y=Reads_mapped))+
+  geom_boxplot()
+
+
+```
+
+```{r}
+
+Bedfile <- read.table(file = "InputFiles/B0H_VFD_S52_bed.tsv", sep="\t", stringsAsFactors = FALSE, header = FALSE, col.names = c("vOTU", "start", "end", "coverage"))
+
+Bed.files <- list.files(path ="InputFiles/", pattern = "bed.tsv", full.names = TRUE)
+
+Bed.list <- lapply(Bed.files, read.table, sep="\t", header=F, col.names=c("vOTU", "start", "end", "coverage"))
+
+Samples <- list.files(path="InputFiles/", pattern="bed.tsv") %>%
+  str_remove("_bed.tsv")
+
+names(Bed.list) <- Samples
+
+
+
+Get_Sample_Coverage <- function(Bedfile){
+Bedfile %>%
+  mutate(region_length= end-start) %>%
+  group_by(vOTU)%>%
+  mutate(vOTU_length=sum(region_length)) %>%
+  mutate(region_percent=region_length/vOTU_length)%>%
+  filter(coverage > 0 ) %>%
+  summarise(vOTU_percent_covered = sum(region_percent))
+}
+
+Bed.coverage <- lapply(Bed.list, Get_Sample_Coverage)
+
+
+Bed.coverage_df <- plyr::ldply(Bed.coverage, function(x) x) %>%
+  rename("SampleID"=".id")
+
+vOTU_cov_df <- Bed.coverage_df %>%
+  spread(key = SampleID, value = vOTU_percent_covered)
+
+
+
+vOTU_cov_mat <- as.matrix(vOTU_cov_df[,-1])
+
+hist(vOTU_cov_mat)
+
+
+
+
+                                                     
+#ggplot(Bed.coverage_df, aes(x=SampleID, y=vOTU_percent_covered))+
+ # geom_line(aes(group=vOTU, color=vOTU))
+                                                     
+                                                     
+```
+
+```{r}
+
+
+votu_tpmean <- read.table("InputFiles/FixedNames_CombinedDB_tpmean.txt", stringsAsFactors = FALSE, header = TRUE)
+
+votu_tpmean <- votu_tpmean[,-1]
+
+# Make Presence Absence Table
+vOTU_Pa<-(vOTU_cov_mat>0.75) *(votu_tpmean>1)
+vOTU_Pa[is.na(vOTU_Pa)] <- 0
+
+
+colSums(vOTU_Pa)
+
+
+
+```
+
